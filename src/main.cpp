@@ -114,20 +114,27 @@ void print_wakeup_reason(){
 
   wakeup_reason = esp_sleep_get_wakeup_cause();
 
-  switch(wakeup_reason)
-  {
+  switch(wakeup_reason) {
+    // Wakeup caused by external signal using RTC_IO
     case ESP_SLEEP_WAKEUP_EXT0 : Serial.println("Wakeup caused by external signal using RTC_IO"); break;
+    // Wakeup caused by external signal using RTC_CNTL
     case ESP_SLEEP_WAKEUP_EXT1 : Serial.println("Wakeup caused by external signal using RTC_CNTL"); break;
+    // Wakeup caused by timer
     case ESP_SLEEP_WAKEUP_TIMER : Serial.println("Wakeup caused by timer"); break;
+    // Wakeup caused by touchpad
     case ESP_SLEEP_WAKEUP_TOUCHPAD : Serial.println("Wakeup caused by touchpad"); break;
+    // Wakeup caused by ULP program
     case ESP_SLEEP_WAKEUP_ULP : Serial.println("Wakeup caused by ULP program"); break;
+    // Wakeup not caused by deep sleep
     default : Serial.printf("Wakeup was not caused by deep sleep: %d\n",wakeup_reason); break;
   }
 }
 
 static void prepareTxFrame( uint8_t port )
 {
-    appDataSize = 4;//AppDataSize max value is 64
+    //AppDataSize max value is 64
+    appDataSize = 4;
+    // Add data to be sent
     appData[0] = 0x00;
     appData[1] = 0x01;
     appData[2] = 0x02;
@@ -137,22 +144,28 @@ static void prepareTxFrame( uint8_t port )
 // Add your initialization code here
 void setup()
 {
+  // Start the serial communication with a baud rate of 115200
   Serial.begin(115200);
+  // Wait until the serial communication is established
   while (!Serial);
 
-  //Increment boot number and print it every reboot
+  // Increment boot number and print it every reboot
   ++bootCount;
   Serial.println("Boot number: " + String(bootCount));
 
-  //Print the wakeup reason for ESP32
+  // Print the wakeup reason for ESP32
   print_wakeup_reason();
 
+  // Check the boot count to determine the next step
   if(bootCount > 2) {
     /*
       In this scenario, the person is probably sitting on the pad and continuesly triggers its,
       so we enable timer deepsleep instead of external deepsleep, e.g. wake up by pin. 
     */
+
+   // Reset the boot count
     bootCount = 0;
+
     /*
     First we configure the wake up source
     We set our ESP32 to wake up every 5 seconds
@@ -192,18 +205,23 @@ void loop()
   {
     case DEVICE_STATE_INIT:
     {
+      // Initialize the LoRaWAN module
       LoRaWAN.init(loraWanClass,loraWanRegion);
       break;
     }
     case DEVICE_STATE_JOIN:
     {
+      // Join the LoRaWAN network
       LoRaWAN.join();
       break;
     }
     case DEVICE_STATE_SEND:
     {
+      // Prepare the data to be sent
       prepareTxFrame( appPort );
+      // Send the data over the LoRaWAN network
       LoRaWAN.send(loraWanClass);
+      // Move to the next device state
       deviceState = DEVICE_STATE_CYCLE;
       break;
     }
