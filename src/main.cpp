@@ -27,23 +27,29 @@
 
 #include <ESP32_LoRaWAN.h>
 #include "Arduino.h"
+#include <stdio.h>
 
 /*
   Deep sleep
 */
 #define BUTTON_PIN_BITMASK 0x200000000 // 2^33 in hex
-RTC_DATA_ATTR int bootCount = 0;
+RTC_DATA_ATTR int bootCount = 4;
 
 #define uS_TO_S_FACTOR 1000000ULL     /* Conversion factor for micro seconds to seconds */
-#define TIME_TO_SLEEP  1800           /* Time ESP32 will go to sleep (in seconds) */
+#define TIME_TO_SLEEP  20             /* Time ESP32 will go to sleep (in seconds) */
 
 /*license for Heltec ESP32 LoRaWan, quary your ChipID relevant license: http://resource.heltec.cn/search */
 uint32_t  license[4] = {0xD5397DF0, 0x8573F814, 0x7A38C73D, 0x48E68607};
 
+
+// End device ID: eui-70b3d57ed005a424
+// AppKEY: B6D065CF1800017D25DB531118B3C202
+// DevEUI: 70B3D57ED005A424
+
 /* OTAA para*/
-uint8_t DevEui[] = { 0x70,0xB3,0xD5,0x49,0x9D,0x7D,0x4F,0xB0 };
-uint8_t AppEui[] = { 0x00,0x00,0x00,0x00,0x00,0x00,0x01,0x23 };
-uint8_t AppKey[] = { 0x3B,0x21,0xE7,0xDB,0xC0,0xE3,0x9F,0x0D,0xA1,0xA6,0x5B,0x3D,0x58,0xE6,0xDE,0xF3 };
+uint8_t DevEui[] = { 0x70,0xB3,0xD5,0x7E,0xD0,0x05,0xA4,0x24 };
+uint8_t AppEui[] = { 0x00,0x00,0x00,0x00,0x00,0x00,0x01,0x01 };
+uint8_t AppKey[] = { 0xB6,0xD0,0x65,0xCF,0x18,0x00,0x01,0x7D,0x25,0xDB,0x53,0x11,0x18,0xB3,0xC2,0x02 };
 
 
 /* ABP para*/
@@ -58,7 +64,7 @@ uint16_t userChannelsMask[6]={ 0x00FF,0x0000,0x0000,0x0000,0x0000,0x0000 };
 DeviceClass_t  loraWanClass = CLASS_A;
 
 /*the application data transmission duty cycle.  value in [ms].*/
-uint32_t appTxDutyCycle = 1800000;
+uint32_t appTxDutyCycle = 5000;
 
 /*OTAA or ABP*/
 bool overTheAirActivation = true;
@@ -146,9 +152,8 @@ void setup()
 {
   // Start the serial communication with a baud rate of 115200
   Serial.begin(115200);
-  // Wait until the serial communication is established
-  while (!Serial);
 
+  Serial.println("LoRaWan AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAH");
   // Increment boot number and print it every reboot
   ++bootCount;
   Serial.println("Boot number: " + String(bootCount));
