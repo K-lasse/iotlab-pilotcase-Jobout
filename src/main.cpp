@@ -36,7 +36,7 @@
 RTC_DATA_ATTR int bootCount = 0;
 
 #define uS_TO_S_FACTOR 1000000ULL     /* Conversion factor for micro seconds to seconds */
-#define TIME_TO_SLEEP  300            /* Time ESP32 will go to sleep (in seconds) */
+#define TIME_TO_SLEEP  30            /* Time ESP32 will go to sleep (in seconds) */
 
 /*license for Heltec ESP32 LoRaWan, quary your ChipID relevant license: http://resource.heltec.cn/search */
 uint32_t  license[4] = {0xD5397DF0, 0x8573F814, 0x7A38C73D, 0x48E68607};
@@ -44,6 +44,7 @@ uint32_t  license[4] = {0xD5397DF0, 0x8573F814, 0x7A38C73D, 0x48E68607};
 
 // Array of bits where each bit represent every 5 minutes of a day. 
 uint8_t data[36] = {0};
+
 
 // End device ID: eui-70b3d57ed005a424
 // AppKEY: B6D065CF1800017D25DB531118B3C202
@@ -125,7 +126,13 @@ void print_wakeup_reason(){
 
   switch(wakeup_reason) {
     // Wakeup caused by external signal using RTC_IO
-    case ESP_SLEEP_WAKEUP_EXT0 : Serial.println("Wakeup caused by external signal using RTC_IO"); break;
+    case ESP_SLEEP_WAKEUP_EXT0 : Serial.println("Wakeup caused by external signal using RTC_IO");
+      // Check value of GPIO_NUM_33 and do an OR operation on data[bootCount]
+      if (digitalRead(GPIO_NUM_33) == 1) {
+        data[bootCount] |= 1;
+      }
+      bootCount++;
+    break;
     // Wakeup caused by external signal using RTC_CNTL
     case ESP_SLEEP_WAKEUP_EXT1 : Serial.println("Wakeup caused by external signal using RTC_CNTL"); break;
     // Wakeup caused by timer
