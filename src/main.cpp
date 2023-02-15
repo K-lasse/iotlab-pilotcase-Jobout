@@ -33,10 +33,10 @@
   Deep sleep
 */
 #define BUTTON_PIN_BITMASK 0x200000000 // 2^33 in hex
-RTC_DATA_ATTR int bootCount = 4;
+RTC_DATA_ATTR int bootCount = 0;
 
 #define uS_TO_S_FACTOR 1000000ULL     /* Conversion factor for micro seconds to seconds */
-#define TIME_TO_SLEEP  20             /* Time ESP32 will go to sleep (in seconds) */
+#define TIME_TO_SLEEP  360            /* Time ESP32 will go to sleep (in seconds) */
 
 /*license for Heltec ESP32 LoRaWan, quary your ChipID relevant license: http://resource.heltec.cn/search */
 uint32_t  license[4] = {0xD5397DF0, 0x8573F814, 0x7A38C73D, 0x48E68607};
