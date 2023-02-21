@@ -36,14 +36,17 @@
 RTC_DATA_ATTR int bootCount = 0;
 
 #define uS_TO_S_FACTOR 1000000ULL     /* Conversion factor for micro seconds to seconds */
-#define TIME_TO_SLEEP  30            /* Time ESP32 will go to sleep (in seconds) */
+#define TIME_TO_SLEEP  10            /* Time ESP32 will go to sleep (in seconds) */
 
 /*license for Heltec ESP32 LoRaWan, quary your ChipID relevant license: http://resource.heltec.cn/search */
 uint32_t  license[4] = {0xD5397DF0, 0x8573F814, 0x7A38C73D, 0x48E68607};
 
 
-// Array of bits where each bit represent every 5 minutes of a day. 
-uint8_t data[36] = {0};
+// Array of bits where each bit represent every 5 minutes of a day.
+// With this it enables us to store and manipulate 288 individual bits (9 elements x 32 bits per element). 
+uint32_t data[9] = {0};
+
+const int GPIO_WAKEUP_PIN = GPIO_NUM_33;
 
 
 // End device ID: eui-70b3d57ed005a424
@@ -79,7 +82,7 @@ bool loraWanAdr = true;
 /* Indicates if the node is sending confirmed or unconfirmed messages */
 bool isTxConfirmed = true;
 
-/* Application port */
+/* Application port */  
 uint8_t appPort = 2;
 
 /*!
@@ -125,22 +128,23 @@ void print_wakeup_reason(){
   wakeup_reason = esp_sleep_get_wakeup_cause();
 
   switch(wakeup_reason) {
-    // Wakeup caused by external signal using RTC_IO
-    case ESP_SLEEP_WAKEUP_EXT0 : Serial.println("Wakeup caused by external signal using RTC_IO");
-      // Check value of GPIO_NUM_33 and do an OR operation on data[bootCount]
-      if (digitalRead(GPIO_NUM_33) == 1) {
+    // Wakeup caused by timer
+    case ESP_SLEEP_WAKEUP_TIMER : 
+      Serial.println("Wakeup caused by timer"); 
+
+      // Set the GPIO pin mode to input
+      pinMode(GPIO_WAKEUP_PIN, INPUT);
+
+      // Check value of GPIO_WAKEUP_PIN and update data array
+      if (digitalRead(GPIO_WAKEUP_PIN) == 1) {
+        Serial.println("GPIO_WAKEUP_PIN is HIGH");
         data[bootCount] |= 1;
+      }
+      else {
+        Serial.println("GPIO_WAKEUP_PIN is LOW");
       }
       bootCount++;
     break;
-    // Wakeup caused by external signal using RTC_CNTL
-    case ESP_SLEEP_WAKEUP_EXT1 : Serial.println("Wakeup caused by external signal using RTC_CNTL"); break;
-    // Wakeup caused by timer
-    case ESP_SLEEP_WAKEUP_TIMER : Serial.println("Wakeup caused by timer"); break;
-    // Wakeup caused by touchpad
-    case ESP_SLEEP_WAKEUP_TOUCHPAD : Serial.println("Wakeup caused by touchpad"); break;
-    // Wakeup caused by ULP program
-    case ESP_SLEEP_WAKEUP_ULP : Serial.println("Wakeup caused by ULP program"); break;
     // Wakeup not caused by deep sleep
     default : Serial.printf("Wakeup was not caused by deep sleep: %d\n",wakeup_reason); break;
   }
@@ -165,53 +169,28 @@ void setup()
 
   Serial.println("LoRaWan AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAH");
   // Increment boot number and print it every reboot
-  ++bootCount;
   Serial.println("Boot number: " + String(bootCount));
 
   // Print the wakeup reason for ESP32
   print_wakeup_reason();
 
-  // Check the boot count to determine the next step
-  if(bootCount > 2) {
-    /*
-      In this scenario, the person is probably sitting on the pad and continuesly triggers its,
-      so we enable timer deepsleep instead of external deepsleep, e.g. wake up by pin. 
-    */
-
-   // Reset the boot count
-    bootCount = 0;
-
-    /*
-    First we configure the wake up source
-    We set our ESP32 to wake up every 5 seconds
-    */
-    esp_sleep_enable_timer_wakeup(TIME_TO_SLEEP * uS_TO_S_FACTOR);
-    Serial.println("Setup ESP32 to sleep for every " + String(TIME_TO_SLEEP) + " Seconds");
-    Serial.println("Going to sleep now");
-    Serial.flush(); 
-    esp_deep_sleep_start();
-  } else {
-    /*
-      In this scenario, the person probably just sat on the pad or have been 
-      sitting on it for more than 30 minutes.
-    */
-    SPI.begin(SCK,MISO,MOSI,SS);
-    Mcu.init(SS,RST_LoRa,DIO0,DIO1,license);
-    deviceState = DEVICE_STATE_INIT;
-
-    /*
-    First we configure the wake up source
-    We set our ESP32 to wake up for an external trigger.
-    There are two types for ESP32, ext0 and ext1 .
-    ext0 uses RTC_IO to wakeup thus requires RTC peripherals
-    to be on while ext1 uses RTC Controller so doesnt need
-    peripherals to be powered on.
-    Note that using internal pullups/pulldowns also requires
-    RTC peripherals to be turned on.
+  /*
+    In this scenario, the person is probably sitting on the pad and continuesly triggers its,
+    so we enable timer deepsleep instead of external deepsleep, e.g. wake up by pin. 
   */
-    esp_sleep_enable_ext0_wakeup(GPIO_NUM_33,1); //1 = High, 0 = Low
-  }
+
+  /*
+  First we configure the wake up source
+  We set our ESP32 to wake up every 5 seconds
+  */
+  esp_sleep_enable_timer_wakeup(TIME_TO_SLEEP * uS_TO_S_FACTOR);
+  pinMode(GPIO_NUM_33, INPUT);
+  Serial.println("Setup ESP32 to sleep for every " + String(TIME_TO_SLEEP) + " Seconds");
+  Serial.println("Going to sleep now");
+  Serial.flush(); 
+  esp_deep_sleep_start();
 }
+
 
 // The loop function is called in an endless loop
 void loop()
