@@ -23,7 +23,7 @@
  *
  *this project also release in GitHub:
  *https://github.com/HelTecAutomation/ESP32_LoRaWAN
-*/
+ */
 
 #include <ESP32_LoRaWAN.h>
 #include "Arduino.h"
@@ -33,42 +33,42 @@
   Deep sleep
 */
 #define BUTTON_PIN_BITMASK 0x200000000 // 2^33 in hex
-RTC_DATA_ATTR int samples = 286;
+RTC_DATA_ATTR int samples = 0;
 
-#define uS_TO_S_FACTOR 1000000ULL     /* Conversion factor for micro seconds to seconds */
-#define TIME_TO_SLEEP  10            /* Time ESP32 will go to sleep (in seconds) */
+#define uS_TO_S_FACTOR 1000000ULL /* Conversion factor for micro seconds to seconds */
+#define TIME_TO_SLEEP 10          /* Time ESP32 will go to sleep (in seconds) */
 
 /*license for Heltec ESP32 LoRaWan, quary your ChipID relevant license: http://resource.heltec.cn/search */
-uint32_t  license[4] = {0xD5397DF0, 0x8573F814, 0x7A38C73D, 0x48E68607};
-
+uint32_t license[4] = {0xD5397DF0, 0x8573F814, 0x7A38C73D, 0x48E68607};
 
 // Array of bits where each bit represent every 5 minutes of a day.
-// With this it enables us to store and manipulate 288 individual bits (9 elements x 32 bits per element). 
+// With this it enables us to store and manipulate 288 individual bits (9 elements x 32 bits per element).
 uint32_t data[9] = {0};
+// TODO: Fix pointer
+size_t bit_index = 0;
+size_t data_index = 0;
 
 const int GPIO_WAKEUP_PIN = GPIO_NUM_33;
-
 
 // End device ID: eui-70b3d57ed005a424
 // AppKEY: B6D065CF1800017D25DB531118B3C202
 // DevEUI: 70B3D57ED005A424
 
 /* OTAA para*/
-uint8_t DevEui[] = { 0x70,0xB3,0xD5,0x7E,0xD0,0x05,0xA4,0x24 };
-uint8_t AppEui[] = { 0x00,0x00,0x00,0x00,0x00,0x00,0x01,0x01 };
-uint8_t AppKey[] = { 0xB6,0xD0,0x65,0xCF,0x18,0x00,0x01,0x7D,0x25,0xDB,0x53,0x11,0x18,0xB3,0xC2,0x02 };
-
+uint8_t DevEui[] = {0x70, 0xB3, 0xD5, 0x7E, 0xD0, 0x05, 0xA4, 0x24};
+uint8_t AppEui[] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x01};
+uint8_t AppKey[] = {0xB6, 0xD0, 0x65, 0xCF, 0x18, 0x00, 0x01, 0x7D, 0x25, 0xDB, 0x53, 0x11, 0x18, 0xB3, 0xC2, 0x02};
 
 /* ABP para*/
-uint8_t NwkSKey[] = { 0x15, 0xb1, 0xd0, 0xef, 0xa4, 0x63, 0xdf, 0xbe, 0x3d, 0x11, 0x18, 0x1e, 0x1e, 0xc7, 0xda,0x85 };
-uint8_t AppSKey[] = { 0xd7, 0x2c, 0x78, 0x75, 0x8c, 0xdc, 0xca, 0xbf, 0x55, 0xee, 0x4a, 0x77, 0x8d, 0x16, 0xef,0x67 };
-uint32_t DevAddr =  ( uint32_t )0x007e6ae1;
+uint8_t NwkSKey[] = {0x15, 0xb1, 0xd0, 0xef, 0xa4, 0x63, 0xdf, 0xbe, 0x3d, 0x11, 0x18, 0x1e, 0x1e, 0xc7, 0xda, 0x85};
+uint8_t AppSKey[] = {0xd7, 0x2c, 0x78, 0x75, 0x8c, 0xdc, 0xca, 0xbf, 0x55, 0xee, 0x4a, 0x77, 0x8d, 0x16, 0xef, 0x67};
+uint32_t DevAddr = (uint32_t)0x007e6ae1;
 
 /*LoraWan channelsmask, default channels 0-7*/
-uint16_t userChannelsMask[6]={ 0x00FF,0x0000,0x0000,0x0000,0x0000,0x0000 };
+uint16_t userChannelsMask[6] = {0x00FF, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000};
 
 /*LoraWan Class, Class A and Class C are supported*/
-DeviceClass_t  loraWanClass = CLASS_A;
+DeviceClass_t loraWanClass = CLASS_A;
 
 /*the application data transmission duty cycle.  value in [ms].*/
 uint32_t appTxDutyCycle = 5000;
@@ -82,83 +82,122 @@ bool loraWanAdr = true;
 /* Indicates if the node is sending confirmed or unconfirmed messages */
 bool isTxConfirmed = true;
 
-/* Application port */  
+/* Application port */
 uint8_t appPort = 2;
 
 /*!
-* Number of trials to transmit the frame, if the LoRaMAC layer did not
-* receive an acknowledgment. The MAC performs a datarate adaptation,
-* according to the LoRaWAN Specification V1.0.2, chapter 18.4, according
-* to the following table:
-*
-* Transmission nb | Data Rate
-* ----------------|-----------
-* 1 (first)       | DR
-* 2               | DR
-* 3               | max(DR-1,0)
-* 4               | max(DR-1,0)
-* 5               | max(DR-2,0)
-* 6               | max(DR-2,0)
-* 7               | max(DR-3,0)
-* 8               | max(DR-3,0)
-*
-* Note, that if NbTrials is set to 1 or 2, the MAC will not decrease
-* the datarate, in case the LoRaMAC layer did not receive an acknowledgment
-*/
+ * Number of trials to transmit the frame, if the LoRaMAC layer did not
+ * receive an acknowledgment. The MAC performs a datarate adaptation,
+ * according to the LoRaWAN Specification V1.0.2, chapter 18.4, according
+ * to the following table:
+ *
+ * Transmission nb | Data Rate
+ * ----------------|-----------
+ * 1 (first)       | DR
+ * 2               | DR
+ * 3               | max(DR-1,0)
+ * 4               | max(DR-1,0)
+ * 5               | max(DR-2,0)
+ * 6               | max(DR-2,0)
+ * 7               | max(DR-3,0)
+ * 8               | max(DR-3,0)
+ *
+ * Note, that if NbTrials is set to 1 or 2, the MAC will not decrease
+ * the datarate, in case the LoRaMAC layer did not receive an acknowledgment
+ */
 uint8_t confirmedNbTrials = 8;
 
 /*LoraWan debug level, select in arduino IDE tools.
-* None : print basic info.
-* Freq : print Tx and Rx freq, DR info.
-* Freq && DIO : print Tx and Rx freq, DR, DIO0 interrupt and DIO1 interrupt info.
-* Freq && DIO && PW: print Tx and Rx freq, DR, DIO0 interrupt, DIO1 interrupt and MCU deepsleep info.
-*/
+ * None : print basic info.
+ * Freq : print Tx and Rx freq, DR info.
+ * Freq && DIO : print Tx and Rx freq, DR, DIO0 interrupt and DIO1 interrupt info.
+ * Freq && DIO && PW: print Tx and Rx freq, DR, DIO0 interrupt, DIO1 interrupt and MCU deepsleep info.
+ */
 uint8_t debugLevel = LoRaWAN_DEBUG_LEVEL;
 
 /*LoraWan region, select in arduino IDE tools*/
 LoRaMacRegion_t loraWanRegion = ACTIVE_REGION;
 
+void print_bits(uint32_t num, int num_bits)
+{
+  for (int i = num_bits - 1; i >= 0; i--)
+  {
+    bool bit = (num >> i) & 1;
+    Serial.print(bit ? "1" : "0");
+  }
+  Serial.println();
+}
+
 /*
 Method to print the reason by which ESP32
 has been awaken from sleep
 */
-void print_wakeup_reason(){
+void print_wakeup_reason()
+{
   esp_sleep_wakeup_cause_t wakeup_reason;
 
   wakeup_reason = esp_sleep_get_wakeup_cause();
 
-  switch(wakeup_reason) {
-    // Wakeup caused by timer
-    case ESP_SLEEP_WAKEUP_TIMER : 
-      Serial.println("Wakeup caused by timer"); 
+  switch (wakeup_reason)
+  {
+  // Wakeup caused by timer
+  case ESP_SLEEP_WAKEUP_TIMER:
+    Serial.println("Wakeup caused by timer");
 
-      // Set the GPIO pin mode to input
-      pinMode(GPIO_WAKEUP_PIN, INPUT);
+    // Set the GPIO pin mode to input
+    pinMode(GPIO_WAKEUP_PIN, INPUT);
 
-      // Check value of GPIO_WAKEUP_PIN and update data array
-      if (digitalRead(GPIO_WAKEUP_PIN) == 1) {
-        Serial.println("GPIO_WAKEUP_PIN is HIGH");
-        data[samples] |= 1;
+    // Check value of GPIO_WAKEUP_PIN and update data array
+    if (digitalRead(GPIO_WAKEUP_PIN) == 1)
+    {
+      Serial.println("GPIO_WAKEUP_PIN is HIGH");
+
+      // Set the bit in the data array
+      Serial.println("Setting bit %d in data[%d]", bit_index, data_index); 
+      data[data_index] |= (1 << bit_index);
+      bit_index++;
+    }
+    else
+    {
+      Serial.println("GPIO_WAKEUP_PIN is LOW");
+      bit_index++;
+    }
+
+    if (bit_index >= 32) {
+      // Move to the next uint32_t in the data array
+      data_index++;
+      bit_index = 0;
+
+      if (data_index >= 9) {
+        // Reset the data_index and bit_index when we reach the end of the array
+        data_index = 0;
+        bit_index = 0;
       }
-      else {
-        Serial.println("GPIO_WAKEUP_PIN is LOW");
-      }
-      samples++;
+    }
+
+    // print the array
+    for (int i = 0; i < 9; i++)
+    {
+      print_bits(data[i], 32);
+    }
+    samples++;
     break;
-    // Wakeup not caused by deep sleep
-    default : Serial.printf("Wakeup was not caused by deep sleep: %d\n",wakeup_reason); break;
+  // Wakeup not caused by deep sleep
+  default:
+    Serial.printf("Wakeup was not caused by deep sleep: %d\n", wakeup_reason);
+    break;
   }
 }
 
-static void prepareTxFrame( uint8_t port )
+static void prepareTxFrame(uint8_t port)
 {
-    // AppDataSize max value is 64
-    appDataSize = 1;
-    // Add data to be sent
-    appData[0] = 0x00;
-    appData[1] = 0x01;
-    appData[2] = 0x02;
-    appData[3] = 0x03;
+  // AppDataSize max value is 64
+  appDataSize = 1;
+  // Add data to be sent
+  appData[0] = 0x00;
+  appData[1] = 0x01;
+  appData[2] = 0x02;
+  appData[3] = 0x03;
 }
 
 // Add your initialization code here
@@ -167,89 +206,91 @@ void setup()
   // Start the serial communication with a baud rate of 115200
   Serial.begin(115200);
 
+  print_wakeup_reason();
   Serial.println("LoRaWan AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAH");
   // Increment boot number and print it every reboot
   Serial.println("Number of samples taken: " + String(samples));
 
-
   // Print the wakeup reason for ESP32
-  print_wakeup_reason();
 
   /*
     In this scenario, the person is probably sitting on the pad and continuesly triggers its,
-    so we enable timer deepsleep instead of external deepsleep, e.g. wake up by pin. 
+    so we enable timer deepsleep instead of external deepsleep, e.g. wake up by pin.
   */
-  if (samples == 288) {
+  if (samples == 288)
+  {
     SPI.begin(SCK, MISO, MOSI, SS);
     Mcu.init(SS, RST_LoRa, DIO0, DIO1, license);
     deviceState = DEVICE_STATE_INIT;
-  } else {
-    deviceState = DEVICE_STATE_SLEEP;
-  }  
-}
+  }
+  else
+  {
+    /*
+    First we configure the wake up source
+    We set our ESP32 to wake up every 5 seconds
+    */
+    esp_sleep_enable_timer_wakeup(TIME_TO_SLEEP * uS_TO_S_FACTOR);
 
+    pinMode(GPIO_NUM_33, INPUT);
+    Serial.println("Setup ESP32 to sleep for every " + String(TIME_TO_SLEEP) + " Seconds");
+    Serial.println("Going to sleep now");
+    Serial.flush();
+    esp_deep_sleep_start();
+  }
+}
 
 // The loop function is called in an endless loop
 void loop()
 {
-  switch( deviceState )
+  switch (deviceState)
   {
-    case DEVICE_STATE_INIT:
-    {
-      Serial.println("Init");
-      // Initialize the LoRaWAN module
-      LoRaWAN.init(loraWanClass,loraWanRegion);
-      break;
-    }
-    case DEVICE_STATE_JOIN:
-    {
-      // Join the LoRaWAN network
-      LoRaWAN.join();
-      deviceState = DEVICE_STATE_SEND;
-      break;
-    }
-    case DEVICE_STATE_SEND:
-    {
-      Serial.println("Sending data");
-      // Prepare the data to be sent
-      // prepareTxFrame( appPort );
-      // appDataSize = 1;
-      appData[0] = samples;
-      // Send the data over the LoRaWAN network
-      LoRaWAN.send(loraWanClass);
-      // Move to the next device state
-      deviceState = DEVICE_STATE_CYCLE;
-      Serial.println("RESET THE SAMPLES");
-      samples = 0;
+  case DEVICE_STATE_INIT:
+  {
+    Serial.println("Init");
+    // Initialize the LoRaWAN module
+    LoRaWAN.init(loraWanClass, loraWanRegion);
+    break;
+  }
+  case DEVICE_STATE_JOIN:
+  {
+    // Join the LoRaWAN network
+    LoRaWAN.join();
+    deviceState = DEVICE_STATE_SEND;
+    break;
+  }
+  case DEVICE_STATE_SEND:
+  {
+    Serial.println("Sending data");
+    // Prepare the data to be sent
+    // prepareTxFrame( appPort );
+    // appDataSize = 1;
+    // appData[0] = samples;
+    // Send the data over the LoRaWAN network
+    LoRaWAN.send(loraWanClass);
+    // Move to the next device state
+    deviceState = DEVICE_STATE_CYCLE;
+    Serial.println("RESET THE SAMPLES");
+    samples = 0;
 
-      break;
-    }
-    case DEVICE_STATE_CYCLE:
-    {
-      // Schedule next packet transmission
-      txDutyCycleTime = appTxDutyCycle + randr( -APP_TX_DUTYCYCLE_RND, APP_TX_DUTYCYCLE_RND );
-      LoRaWAN.cycle(txDutyCycleTime);
-      deviceState = DEVICE_STATE_SLEEP;
-      break;
-    }
-    case DEVICE_STATE_SLEEP:
-    {
-      /*
-      First we configure the wake up source
-      We set our ESP32 to wake up every 5 seconds
-      */
-      esp_sleep_enable_timer_wakeup(TIME_TO_SLEEP * uS_TO_S_FACTOR);
-      pinMode(GPIO_NUM_33, INPUT);
-      Serial.println("Setup ESP32 to sleep for every " + String(TIME_TO_SLEEP) + " Seconds");
-      Serial.println("Going to sleep now");
-      Serial.flush(); 
-      esp_deep_sleep_start();
-      break;
-    }
-    default:
-    {
-      deviceState = DEVICE_STATE_INIT;
-      break;
-    }
+    break;
+  }
+  case DEVICE_STATE_CYCLE:
+  {
+    // Schedule next packet transmission
+    txDutyCycleTime = appTxDutyCycle + randr(-APP_TX_DUTYCYCLE_RND, APP_TX_DUTYCYCLE_RND);
+    LoRaWAN.cycle(txDutyCycleTime);
+    deviceState = DEVICE_STATE_SLEEP;
+    break;
+  }
+  case DEVICE_STATE_SLEEP:
+  {
+    LoRaWAN.sleep(loraWanClass, debugLevel);
+    break;
+  }
+  default:
+  {
+    deviceState = DEVICE_STATE_INIT;
+    break;
+  }
   }
 }
