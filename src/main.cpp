@@ -33,7 +33,7 @@
   Deep sleep
 */
 #define BUTTON_PIN_BITMASK 0x200000000 // 2^33 in hex
-RTC_DATA_ATTR int bootCount = 0;
+RTC_DATA_ATTR int samples = 286;
 
 #define uS_TO_S_FACTOR 1000000ULL     /* Conversion factor for micro seconds to seconds */
 #define TIME_TO_SLEEP  10            /* Time ESP32 will go to sleep (in seconds) */
@@ -138,12 +138,12 @@ void print_wakeup_reason(){
       // Check value of GPIO_WAKEUP_PIN and update data array
       if (digitalRead(GPIO_WAKEUP_PIN) == 1) {
         Serial.println("GPIO_WAKEUP_PIN is HIGH");
-        data[bootCount] |= 1;
+        data[samples] |= 1;
       }
       else {
         Serial.println("GPIO_WAKEUP_PIN is LOW");
       }
-      bootCount++;
+      samples++;
     break;
     // Wakeup not caused by deep sleep
     default : Serial.printf("Wakeup was not caused by deep sleep: %d\n",wakeup_reason); break;
@@ -153,7 +153,7 @@ void print_wakeup_reason(){
 static void prepareTxFrame( uint8_t port )
 {
     // AppDataSize max value is 64
-    appDataSize = 4;
+    appDataSize = 1;
     // Add data to be sent
     appData[0] = 0x00;
     appData[1] = 0x01;
@@ -169,7 +169,8 @@ void setup()
 
   Serial.println("LoRaWan AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAH");
   // Increment boot number and print it every reboot
-  Serial.println("Boot number: " + String(bootCount));
+  Serial.println("Number of samples taken: " + String(samples));
+
 
   // Print the wakeup reason for ESP32
   print_wakeup_reason();
@@ -178,17 +179,13 @@ void setup()
     In this scenario, the person is probably sitting on the pad and continuesly triggers its,
     so we enable timer deepsleep instead of external deepsleep, e.g. wake up by pin. 
   */
-
-  /*
-  First we configure the wake up source
-  We set our ESP32 to wake up every 5 seconds
-  */
-  esp_sleep_enable_timer_wakeup(TIME_TO_SLEEP * uS_TO_S_FACTOR);
-  pinMode(GPIO_NUM_33, INPUT);
-  Serial.println("Setup ESP32 to sleep for every " + String(TIME_TO_SLEEP) + " Seconds");
-  Serial.println("Going to sleep now");
-  Serial.flush(); 
-  esp_deep_sleep_start();
+  if (samples == 288) {
+    SPI.begin(SCK, MISO, MOSI, SS);
+    Mcu.init(SS, RST_LoRa, DIO0, DIO1, license);
+    deviceState = DEVICE_STATE_INIT;
+  } else {
+    deviceState = DEVICE_STATE_SLEEP;
+  }  
 }
 
 
@@ -199,6 +196,7 @@ void loop()
   {
     case DEVICE_STATE_INIT:
     {
+      Serial.println("Init");
       // Initialize the LoRaWAN module
       LoRaWAN.init(loraWanClass,loraWanRegion);
       break;
@@ -207,16 +205,23 @@ void loop()
     {
       // Join the LoRaWAN network
       LoRaWAN.join();
+      deviceState = DEVICE_STATE_SEND;
       break;
     }
     case DEVICE_STATE_SEND:
     {
+      Serial.println("Sending data");
       // Prepare the data to be sent
-      prepareTxFrame( appPort );
+      // prepareTxFrame( appPort );
+      // appDataSize = 1;
+      appData[0] = samples;
       // Send the data over the LoRaWAN network
       LoRaWAN.send(loraWanClass);
       // Move to the next device state
       deviceState = DEVICE_STATE_CYCLE;
+      Serial.println("RESET THE SAMPLES");
+      samples = 0;
+
       break;
     }
     case DEVICE_STATE_CYCLE:
@@ -229,7 +234,16 @@ void loop()
     }
     case DEVICE_STATE_SLEEP:
     {
-      LoRaWAN.sleep(loraWanClass,debugLevel);
+      /*
+      First we configure the wake up source
+      We set our ESP32 to wake up every 5 seconds
+      */
+      esp_sleep_enable_timer_wakeup(TIME_TO_SLEEP * uS_TO_S_FACTOR);
+      pinMode(GPIO_NUM_33, INPUT);
+      Serial.println("Setup ESP32 to sleep for every " + String(TIME_TO_SLEEP) + " Seconds");
+      Serial.println("Going to sleep now");
+      Serial.flush(); 
+      esp_deep_sleep_start();
       break;
     }
     default:
