@@ -33,7 +33,6 @@
   Deep sleep
 */
 #define BUTTON_PIN_BITMASK 0x200000000 // 2^33 in hex
-RTC_DATA_ATTR int samples = 0;
 
 #define uS_TO_S_FACTOR 1000000ULL /* Conversion factor for micro seconds to seconds */
 #define TIME_TO_SLEEP 10          /* Time ESP32 will go to sleep (in seconds) */
@@ -44,9 +43,10 @@ uint32_t license[4] = {0xD5397DF0, 0x8573F814, 0x7A38C73D, 0x48E68607};
 // Array of bits where each bit represent every 5 minutes of a day.
 // With this it enables us to store and manipulate 288 individual bits (9 elements x 32 bits per element).
 uint32_t data[9] = {0};
+RTC_DATA_ATTR int samples = 0;
 // TODO: Fix pointer
-size_t bit_index = 0;
-size_t data_index = 0;
+int bit_index = 0;
+uint32_t *ptr = data;
 
 const int GPIO_WAKEUP_PIN = GPIO_NUM_33;
 
@@ -134,6 +134,8 @@ has been awaken from sleep
 */
 void print_wakeup_reason()
 {
+
+
   esp_sleep_wakeup_cause_t wakeup_reason;
 
   wakeup_reason = esp_sleep_get_wakeup_cause();
@@ -151,42 +153,51 @@ void print_wakeup_reason()
     if (digitalRead(GPIO_WAKEUP_PIN) == 1)
     {
       Serial.println("GPIO_WAKEUP_PIN is HIGH");
+      
+      // SET BIT TO 1
 
-      // Set the bit in the data array
-      Serial.println("Setting bit %d in data[%d]", bit_index, data_index); 
-      data[data_index] |= (1 << bit_index);
+      *ptr |= (1 << (bit_index));
+      ptr++;
       bit_index++;
+      samples++;
     }
     else
     {
       Serial.println("GPIO_WAKEUP_PIN is LOW");
+      ptr++;
       bit_index++;
+      samples++;
     }
+    Serial.println(*ptr);
+    
 
-    if (bit_index >= 32) {
-      // Move to the next uint32_t in the data array
-      data_index++;
-      bit_index = 0;
 
-      if (data_index >= 9) {
-        // Reset the data_index and bit_index when we reach the end of the array
-        data_index = 0;
-        bit_index = 0;
-      }
-    }
+
 
     // print the array
     for (int i = 0; i < 9; i++)
     {
       print_bits(data[i], 32);
     }
-    samples++;
+
+    // CHECK IF WE NEED TO MOVE ON TO NEXT ELEMENT
+    if (bit_index == 31)
+    {
+      // RESET BITS IN ORDER TO MOVE ON TO NEXT ELEMENT
+      bit_index = 0;
+
+      // POINT TO NEXT ELEMENT
+      ptr++;
+    }
+
     break;
+
   // Wakeup not caused by deep sleep
   default:
     Serial.printf("Wakeup was not caused by deep sleep: %d\n", wakeup_reason);
     break;
   }
+
 }
 
 static void prepareTxFrame(uint8_t port)
