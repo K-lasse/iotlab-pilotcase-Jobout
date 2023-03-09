@@ -43,8 +43,8 @@ uint32_t license[4] = {0xD5397DF0, 0x8573F814, 0x7A38C73D, 0x48E68607};
 // Array of bits where each bit represent every 5 minutes of a day.
 // With this it enables us to store and manipulate 288 individual bits (9 elements x 32 bits per element).
 RTC_DATA_ATTR uint32_t data[9] = {0};
-RTC_DATA_ATTR int element_index = 8;
-RTC_DATA_ATTR int bit_index = 30;
+RTC_DATA_ATTR int element_index = 0;
+RTC_DATA_ATTR int bit_index = 0;
 RTC_DATA_ATTR bool sent = false;
 uint32_t *ptr = &data[element_index];
 
@@ -117,6 +117,18 @@ uint8_t debugLevel = LoRaWAN_DEBUG_LEVEL;
 
 /*LoraWan region, select in arduino IDE tools*/
 LoRaMacRegion_t loraWanRegion = ACTIVE_REGION;
+
+
+void measureBattery (void* pvParameters) {
+  // Measure the battery voltage
+}
+
+void connectToLoRa(void* pvParameters) {
+    // Join the LoRaWAN network
+    LoRaWAN.join();
+    deviceState = DEVICE_STATE_SEND;
+}
+    
 
 void print_bits(uint32_t num, int num_bits)
 {
@@ -234,6 +246,24 @@ void setup()
       bit_index = 0;
       element_index++;
     }
+  xTaskCreate (
+    connectToLoRa,
+    "connectToLoRa",
+    10000,
+    NULL,
+    1,
+    NULL
+  );
+
+  xTaskCreate (
+    measureBattery,
+    "measureBattery",
+    10000,
+    NULL,
+    1,
+    NULL
+  );
+  
     /*
     First we configure the wake up source
     We set our ESP32 to wake up every 5 seconds
@@ -247,6 +277,9 @@ void setup()
     esp_deep_sleep_start();
   }
 }
+
+
+
 
 // The loop function is called in an endless loop
 void loop()
@@ -262,9 +295,6 @@ void loop()
   }
   case DEVICE_STATE_JOIN:
   {
-    // Join the LoRaWAN network
-    LoRaWAN.join();
-    deviceState = DEVICE_STATE_SEND;
     break;
   }
   case DEVICE_STATE_SEND:
