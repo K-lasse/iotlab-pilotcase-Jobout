@@ -25,8 +25,8 @@
  *https://github.com/HelTecAutomation/ESP32_LoRaWAN
  */
 
-#include <ESP32_LoRaWAN.h>
 #include "Arduino.h"
+#include <TTN_esp32.h>
 #include <stdio.h>
 
 /*
@@ -35,7 +35,7 @@
 #define BUTTON_PIN_BITMASK 0x200000000 // 2^33 in hex
 
 #define uS_TO_S_FACTOR 1000000ULL /* Conversion factor for micro seconds to seconds */
-#define TIME_TO_SLEEP 2          /* Time ESP32 will go to sleep (in seconds) */
+#define TIME_TO_SLEEP 5           /* Time ESP32 will go to sleep (in seconds) */
 
 /*license for Heltec ESP32 LoRaWan, quary your ChipID relevant license: http://resource.heltec.cn/search */
 uint32_t license[4] = {0xD5397DF0, 0x8573F814, 0x7A38C73D, 0x48E68607};
@@ -43,97 +43,28 @@ uint32_t license[4] = {0xD5397DF0, 0x8573F814, 0x7A38C73D, 0x48E68607};
 // Array of bits where each bit represent every 5 minutes of a day.
 // With this it enables us to store and manipulate 288 individual bits (9 elements x 32 bits per element).
 RTC_DATA_ATTR uint32_t data[9] = {0};
-RTC_DATA_ATTR int element_index = 0;
-RTC_DATA_ATTR int bit_index = 0;
+RTC_DATA_ATTR int element_index = 8;
+RTC_DATA_ATTR int bit_index = 30;
 RTC_DATA_ATTR bool sent = false;
 uint32_t *ptr = &data[element_index];
+RTC_DATA_ATTR uint8_t appData[36];
 
 const int GPIO_WAKEUP_PIN = GPIO_NUM_33;
+
+#define INTERVAL 30000
+TTN_esp32 ttn;
 
 // End device ID: eui-70b3d57ed005a424
 // AppKEY: B6D065CF1800017D25DB531118B3C202
 // DevEUI: 70B3D57ED005A424
 
 /* OTAA para*/
-uint8_t DevEui[] = {0x70, 0xB3, 0xD5, 0x7E, 0xD0, 0x05, 0xA4, 0x24};
-uint8_t AppEui[] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x01};
-uint8_t AppKey[] = {0xB6, 0xD0, 0x65, 0xCF, 0x18, 0x00, 0x01, 0x7D, 0x25, 0xDB, 0x53, 0x11, 0x18, 0xB3, 0xC2, 0x02};
+const char *DevEui = "70B3D57ED005A424";
+const char *AppEui = "0000000000000101";
+const char *AppKey = "B6D065CF1800017D25DB531118B3C202";
 
-/* ABP para*/
-uint8_t NwkSKey[] = {0x15, 0xb1, 0xd0, 0xef, 0xa4, 0x63, 0xdf, 0xbe, 0x3d, 0x11, 0x18, 0x1e, 0x1e, 0xc7, 0xda, 0x85};
-uint8_t AppSKey[] = {0xd7, 0x2c, 0x78, 0x75, 0x8c, 0xdc, 0xca, 0xbf, 0x55, 0xee, 0x4a, 0x77, 0x8d, 0x16, 0xef, 0x67};
-uint32_t DevAddr = (uint32_t)0x007e6ae1;
-
-/*LoraWan channelsmask, default channels 0-7*/
-uint16_t userChannelsMask[6] = {0x00FF, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000};
-
-/*LoraWan Class, Class A and Class C are supported*/
-DeviceClass_t loraWanClass = CLASS_A;
-
-/*the application data transmission duty cycle.  value in [ms].*/
-uint32_t appTxDutyCycle = 5000;
-
-/*OTAA or ABP*/
-bool overTheAirActivation = true;
-
-/*ADR enable*/
-bool loraWanAdr = true;
-
-/* Indicates if the node is sending confirmed or unconfirmed messages */
-bool isTxConfirmed = true;
-
-/* Application port */
-uint8_t appPort = 2;
-
-/*!
- * Number of trials to transmit the frame, if the LoRaMAC layer did not
- * receive an acknowledgment. The MAC performs a datarate adaptation,
- * according to the LoRaWAN Specification V1.0.2, chapter 18.4, according
- * to the following table:
- *
- * Transmission nb | Data Rate
- * ----------------|-----------
- * 1 (first)       | DR
- * 2               | DR
- * 3               | max(DR-1,0)
- * 4               | max(DR-1,0)
- * 5               | max(DR-2,0)
- * 6               | max(DR-2,0)
- * 7               | max(DR-3,0)
- * 8               | max(DR-3,0)
- *
- * Note, that if NbTrials is set to 1 or 2, the MAC will not decrease
- * the datarate, in case the LoRaMAC layer did not receive an acknowledgment
- */
-uint8_t confirmedNbTrials = 8;
-
-/*LoraWan debug level, select in arduino IDE tools.
- * None : print basic info.
- * Freq : print Tx and Rx freq, DR info.
- * Freq && DIO : print Tx and Rx freq, DR, DIO0 interrupt and DIO1 interrupt info.
- * Freq && DIO && PW: print Tx and Rx freq, DR, DIO0 interrupt, DIO1 interrupt and MCU deepsleep info.
- */
-uint8_t debugLevel = LoRaWAN_DEBUG_LEVEL;
-
-/*LoraWan region, select in arduino IDE tools*/
-LoRaMacRegion_t loraWanRegion = ACTIVE_REGION;
-
-
-void measureBattery (void* pvParameters) {
-  // Measure the battery voltage
-}
-
-void connectToLoRa(void* pvParameters) {
-    // Join the LoRaWAN network
-    LoRaWAN.join();
-    deviceState = DEVICE_STATE_SEND;
-}
-    
-
-void print_bits(uint32_t num, int num_bits)
-{
-  for (int i = num_bits - 1; i >= 0; i--)
-  {
+void print_bits(uint32_t num, int num_bits) {
+  for (int i = num_bits - 1; i >= 0; i--) {
     bool bit = (num >> i) & 1;
     Serial.print(bit ? "1" : "0");
   }
@@ -144,14 +75,12 @@ void print_bits(uint32_t num, int num_bits)
 Method to print the reason by which ESP32
 has been awaken from sleep
 */
-void print_wakeup_reason()
-{
+void print_wakeup_reason() {
   esp_sleep_wakeup_cause_t wakeup_reason;
 
   wakeup_reason = esp_sleep_get_wakeup_cause();
 
-  switch (wakeup_reason)
-  {
+  switch (wakeup_reason) {
   // Wakeup caused by timer
   case ESP_SLEEP_WAKEUP_TIMER:
     Serial.println("Wakeup caused by timer");
@@ -160,25 +89,21 @@ void print_wakeup_reason()
     pinMode(GPIO_WAKEUP_PIN, INPUT);
 
     // Check value of GPIO_WAKEUP_PIN and update data array
-    if (digitalRead(GPIO_WAKEUP_PIN) == 1)
-    {
+    if (digitalRead(GPIO_WAKEUP_PIN) == 1) {
       Serial.println("GPIO_WAKEUP_PIN is HIGH");
-      
+
       // SET BIT TO 1
       *ptr |= (1 << bit_index);
-    }
-    else
-    {
+    } else {
       Serial.println("GPIO_WAKEUP_PIN is LOW");
     }
-    
+
     bit_index++;
-    
+
     // print the array
-    // for (int i = 0; i < 9; i++)
-    // {
-    //   print_bits(data[i], 32);
-    // }
+    for (int i = 0; i < 9; i++) {
+      print_bits(data[i], 32);
+    }
 
     break;
 
@@ -189,31 +114,15 @@ void print_wakeup_reason()
   }
 }
 
-static void prepareTxFrame(uint8_t port)
-{
-  // AppDataSize max value is 64
-  appDataSize = 9*4;
-  // Add data to be sent
-  uint8_t *p = (uint8_t *) &data;
-
-  for (int i = 0; i < appDataSize; i++)
-  {
-    appData[i] = *p;
-    p++;
-  }
-
-}
-
 // Add your initialization code here
-void setup()
-{
+void setup() {
   // Start the serial communication with a baud rate of 115200
   Serial.begin(115200);
+  Serial.println("Starting ...!");
 
-  //Reset the value of the data array if the data has been sent.
+  // Reset the value of the data array if the data has been sent.
   if (sent) {
-    for (int i = 0; i < 9; i++)
-    {
+    for (int i = 0; i < 9; i++) {
       data[i] = 0;
     }
     element_index = 0;
@@ -225,106 +134,93 @@ void setup()
   print_wakeup_reason();
   Serial.println("LoRaWan AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAH");
 
-  // Print the wakeup reason for ESP32
-
   /*
-    In this scenario, the person is probably sitting on the pad and continuesly triggers its,
-    so we enable timer deepsleep instead of external deepsleep, e.g. wake up by pin.
+  First we configure the wake up source
+  We set our ESP32 to wake up every 5 seconds
   */
-  if (element_index == 8 && bit_index == 32)
-  {
-    SPI.begin(SCK, MISO, MOSI, SS);
-    Mcu.init(SS, RST_LoRa, DIO0, DIO1, license);
-    deviceState = DEVICE_STATE_INIT;
-  }
-  else
-  {
-    // CHECK IF WE NEED TO MOVE ON TO NEXT ELEMENT
-    if (bit_index == 32)
-    {
-      // POINT TO NEXT ELEMENT
-      bit_index = 0;
-      element_index++;
-    }
-  xTaskCreate (
-    connectToLoRa,
-    "connectToLoRa",
-    10000,
-    NULL,
-    1,
-    NULL
-  );
+  esp_sleep_enable_timer_wakeup(TIME_TO_SLEEP * uS_TO_S_FACTOR);
+}
 
-  xTaskCreate (
-    measureBattery,
-    "measureBattery",
-    10000,
-    NULL,
-    1,
-    NULL
-  );
-  
-    /*
-    First we configure the wake up source
-    We set our ESP32 to wake up every 5 seconds
-    */
-    esp_sleep_enable_timer_wakeup(TIME_TO_SLEEP * uS_TO_S_FACTOR);
-
-    pinMode(GPIO_NUM_33, INPUT);
-    Serial.println("Setup ESP32 to sleep for every " + String(TIME_TO_SLEEP) + " Seconds");
-    Serial.println("Going to sleep now");
-    Serial.flush();
-    esp_deep_sleep_start();
+void prepareData() {
+  int appDataSize = 36;
+  uint8_t *p = (uint8_t *)&data;
+  for (int i = 0; i < appDataSize; i++) {
+    appData[i] = *p;
+    p++;
   }
 }
 
+void joinLoRa(void *pvParameters) {
+  ttn.join(DevEui, AppEui, AppKey);
+  vTaskDelay(20000);
 
+  while (!ttn.isJoined()) {
+    ttn.join(DevEui, AppEui, AppKey);
+    vTaskDelay(20000);
+  }
 
+  vTaskDelete(NULL);
+  Serial.println("Joined");
+}
+
+void measureBattery(void *pvParameters) {
+  // Measure battery voltage
+  float batteryVoltage = 0;
+  for (int i = 0; i < 10; i++) {
+    batteryVoltage += analogRead(35);
+    vTaskDelay(10);
+  }
+  batteryVoltage = batteryVoltage / 10;
+  batteryVoltage = batteryVoltage * 0.0032258064516129032258064516129;
+  Serial.print("Battery voltage: ");
+  Serial.println(batteryVoltage);
+
+  vTaskDelete(NULL);
+}
 
 // The loop function is called in an endless loop
-void loop()
-{
-  switch (deviceState)
-  {
-  case DEVICE_STATE_INIT:
-  {
-    Serial.println("Init");
-    // Initialize the LoRaWAN module
-    LoRaWAN.init(loraWanClass, loraWanRegion);
-    break;
+void loop() {
+  if (bit_index == 32 && element_index == 8) {
+    Serial.println("Resetting indexes");
+    int numTasks = uxTaskGetNumberOfTasks();
+    ttn.begin();
+    Serial.println(numTasks);
+    xTaskCreate(
+        joinLoRa, /* Task function. */
+        "ttn",    /* String with name of task. */
+        10000,    /* Stack size in bytes. */
+        NULL,     /* Parameter passed as input of the task */
+        1,        /* Priority of the task. */
+        NULL);    /* Task handle. */
+
+    xTaskCreate(
+        measureBattery, /* Task function. */
+        "battery",      /* String with name of task. */
+        10000,          /* Stack size in bytes. */
+        NULL,           /* Parameter passed as input of the task */
+        1,              /* Priority of the task. */
+        NULL);          /* Task handle. */
+
+    while (uxTaskGetNumberOfTasks() > numTasks) {
+      Serial.println("Waiting for tasks to finish");
+      Serial.println(uxTaskGetNumberOfTasks());
+      vTaskDelay(1000);
+    }
+    prepareData();
+    ttn.sendBytes(appData, sizeof(appData));
+    Serial.println("Data sent");
+    sent = true;
   }
-  case DEVICE_STATE_JOIN:
-  {
-    break;
+
+  else if (bit_index == 32 && element_index < 8) {
+    bit_index = 0;
+    element_index++;
+    ptr = &data[element_index];
   }
-  case DEVICE_STATE_SEND:
-  {
-    // Prepare the data to be sent
-    prepareTxFrame( appPort );
-    // Send the data over the LoRaWAN network
-    sent = LoRaWAN.send(loraWanClass);
-    // Move to the next device state
-    deviceState = DEVICE_STATE_CYCLE;
-    break;
-  }
-  case DEVICE_STATE_CYCLE:
-  {
-    // Schedule next packet transmission
-    txDutyCycleTime = appTxDutyCycle + randr(-APP_TX_DUTYCYCLE_RND, APP_TX_DUTYCYCLE_RND);
-    LoRaWAN.cycle(txDutyCycleTime);
-    deviceState = DEVICE_STATE_SLEEP;
-    break;
-  }
-  case DEVICE_STATE_SLEEP:
-  {
-    // Sleep for the next cycle
-    LoRaWAN.sleep(loraWanClass, debugLevel);
-    break;
-  }
-  default:
-  {
-    deviceState = DEVICE_STATE_INIT;
-    break;
-  }
-  }
+
+  // put your main code here, to run repeatedly:
+  Serial.println("Loop ESP32 to sleep for every " + String(TIME_TO_SLEEP) + " Seconds");
+  Serial.println("Going to sleep now");
+  Serial.flush();
+  esp_deep_sleep_start();
 }
