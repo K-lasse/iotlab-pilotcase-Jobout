@@ -35,7 +35,7 @@
 #define BUTTON_PIN_BITMASK 0x200000000 // 2^33 in hex
 
 #define uS_TO_S_FACTOR 1000000ULL /* Conversion factor for micro seconds to seconds */
-#define TIME_TO_SLEEP 5           /* Time ESP32 will go to sleep (in seconds) */
+#define TIME_TO_SLEEP 15          /* Time ESP32 will go to sleep (in seconds) */
 
 /*license for Heltec ESP32 LoRaWan, quary your ChipID relevant license: http://resource.heltec.cn/search */
 uint32_t license[4] = {0xD5397DF0, 0x8573F814, 0x7A38C73D, 0x48E68607};
@@ -48,11 +48,17 @@ RTC_DATA_ATTR int bit_index = 30;
 RTC_DATA_ATTR bool sent = false;
 uint32_t *ptr = &data[element_index];
 RTC_DATA_ATTR uint8_t appData[36];
+RTC_DATA_ATTR uint8_t voltage = 0;
 
 const int GPIO_WAKEUP_PIN = GPIO_NUM_33;
+const int GPIO_BATTERY_PIN = GPIO_NUM_35;
 
 #define INTERVAL 30000
 TTN_esp32 ttn;
+
+TaskHandle_t joinLoRaHandler = NULL;
+TaskHandle_t batteryHandler = NULL;
+bool batteryMeasured = false;
 
 // End device ID: eui-70b3d57ed005a424
 // AppKEY: B6D065CF1800017D25DB531118B3C202
@@ -152,62 +158,61 @@ void prepareData() {
 
 void joinLoRa(void *pvParameters) {
   ttn.join(DevEui, AppEui, AppKey);
-  vTaskDelay(20000);
+  vTaskDelay(30000);
 
   while (!ttn.isJoined()) {
     ttn.join(DevEui, AppEui, AppKey);
-    vTaskDelay(20000);
+    vTaskDelay(25000);
   }
 
-  vTaskDelete(NULL);
   Serial.println("Joined");
 }
 
 void measureBattery(void *pvParameters) {
   // Measure battery voltage
-  float batteryVoltage = 0;
-  for (int i = 0; i < 10; i++) {
-    batteryVoltage += analogRead(35);
-    vTaskDelay(10);
-  }
-  batteryVoltage = batteryVoltage / 10;
-  batteryVoltage = batteryVoltage * 0.0032258064516129032258064516129;
+  int adcValue = analogRead(GPIO_BATTERY_PIN);
+  voltage = (adcValue) / 4095.0 * 3300.0;
   Serial.print("Battery voltage: ");
-  Serial.println(batteryVoltage);
+  Serial.println(voltage);
 
-  vTaskDelete(NULL);
+  batteryMeasured = true;
+  vTaskDelete(batteryHandler);
 }
 
 // The loop function is called in an endless loop
 void loop() {
   if (bit_index == 32 && element_index == 8) {
     Serial.println("Resetting indexes");
-    int numTasks = uxTaskGetNumberOfTasks();
     ttn.begin();
+
+    int numTasks = uxTaskGetNumberOfTasks();
     Serial.println(numTasks);
     xTaskCreate(
-        joinLoRa, /* Task function. */
-        "ttn",    /* String with name of task. */
-        10000,    /* Stack size in bytes. */
-        NULL,     /* Parameter passed as input of the task */
-        1,        /* Priority of the task. */
-        NULL);    /* Task handle. */
+        joinLoRa,          /* Task function. */
+        "ttn",             /* String with name of task. */
+        10000,             /* Stack size in bytes. */
+        NULL,              /* Parameter passed as input of the task */
+        1,                 /* Priority of the task. */
+        &joinLoRaHandler); /* Task handle. */
 
     xTaskCreate(
-        measureBattery, /* Task function. */
-        "battery",      /* String with name of task. */
-        10000,          /* Stack size in bytes. */
-        NULL,           /* Parameter passed as input of the task */
-        1,              /* Priority of the task. */
-        NULL);          /* Task handle. */
+        measureBattery,   /* Task function. */
+        "battery",        /* String with name of task. */
+        10000,            /* Stack size in bytes. */
+        NULL,             /* Parameter passed as input of the task */
+        1,                /* Priority of the task. */
+        &batteryHandler); /* Task handle. */
 
     while (uxTaskGetNumberOfTasks() > numTasks) {
-      Serial.println("Waiting for tasks to finish");
-      Serial.println(uxTaskGetNumberOfTasks());
-      vTaskDelay(1000);
+      if (ttn.isJoined() && batteryMeasured == true) {
+        vTaskDelete(joinLoRaHandler);
+        break;
+      }
     }
+    Serial.println(uxTaskGetNumberOfTasks());
     prepareData();
     ttn.sendBytes(appData, sizeof(appData));
+    // ttn.sendBytes(voltage, sizeof(voltage));
     Serial.println("Data sent");
     sent = true;
   }
