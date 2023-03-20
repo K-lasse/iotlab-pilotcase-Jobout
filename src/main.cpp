@@ -208,6 +208,7 @@ void loop() {
         vTaskDelete(joinLoRaHandler);
         break;
       }
+      Serial.println(uxTaskGetNumberOfTasks());
     }
     Serial.println(uxTaskGetNumberOfTasks());
     prepareData();
