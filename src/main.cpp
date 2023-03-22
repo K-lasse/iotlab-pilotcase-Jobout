@@ -28,12 +28,14 @@
 #include "Arduino.h"
 #include <TTN_esp32.h>
 #include <stdio.h>
+#include "DHTesp.h"
+
 
 /*
   Deep sleep
 */
 #define BUTTON_PIN_BITMASK 0x200000000 // 2^33 in hex
-
+    // what digital pin we're connected to
 #define uS_TO_S_FACTOR 1000000ULL /* Conversion factor for micro seconds to seconds */
 #define TIME_TO_SLEEP 15          /* Time ESP32 will go to sleep (in seconds) */
 
@@ -44,21 +46,21 @@ uint32_t license[4] = {0xD5397DF0, 0x8573F814, 0x7A38C73D, 0x48E68607};
 // With this it enables us to store and manipulate 288 individual bits (9 elements x 32 bits per element).
 RTC_DATA_ATTR uint32_t data[9] = {0};
 RTC_DATA_ATTR int element_index = 8;
-RTC_DATA_ATTR int bit_index = 30;
+RTC_DATA_ATTR int bit_index = 31;
 RTC_DATA_ATTR bool sent = false;
 uint32_t *ptr = &data[element_index];
 RTC_DATA_ATTR uint8_t appData[36];
-RTC_DATA_ATTR uint8_t voltage = 0;
+RTC_DATA_ATTR float_t voltage = 0;
 
+const int GPIO_TEMP_PIN = GPIO_NUM_15;
 const int GPIO_WAKEUP_PIN = GPIO_NUM_33;
-const int GPIO_BATTERY_PIN = GPIO_NUM_35;
 
 #define INTERVAL 30000
 TTN_esp32 ttn;
+DHTesp dht;
 
 TaskHandle_t joinLoRaHandler = NULL;
 TaskHandle_t batteryHandler = NULL;
-bool batteryMeasured = false;
 
 // End device ID: eui-70b3d57ed005a424
 // AppKEY: B6D065CF1800017D25DB531118B3C202
@@ -166,16 +168,16 @@ void joinLoRa(void *pvParameters) {
   }
 
   Serial.println("Joined");
+  vTaskDelete(joinLoRaHandler);
 }
 
-void measureBattery(void *pvParameters) {
-  // Measure battery voltage
-  int adcValue = analogRead(GPIO_BATTERY_PIN);
-  voltage = (adcValue) / 4095.0 * 3300.0;
-  Serial.print("Battery voltage: ");
-  Serial.println(voltage);
-
-  batteryMeasured = true;
+void measureTemp(void *pvParameters) {
+  // Measure temperature
+  dht.setup(GPIO_TEMP_PIN, DHTesp::DHT11);
+  float temperature = dht.getTemperature();
+  Serial.print("Temperature: ");
+  Serial.println(temperature);
+  
   vTaskDelete(batteryHandler);
 }
 
@@ -186,7 +188,7 @@ void loop() {
     ttn.begin();
 
     int numTasks = uxTaskGetNumberOfTasks();
-    Serial.println(numTasks);
+    // Serial.println(numTasks);
     xTaskCreate(
         joinLoRa,          /* Task function. */
         "ttn",             /* String with name of task. */
@@ -196,21 +198,19 @@ void loop() {
         &joinLoRaHandler); /* Task handle. */
 
     xTaskCreate(
-        measureBattery,   /* Task function. */
-        "battery",        /* String with name of task. */
+        measureTemp,      /* Task function. */
+        "temp",           /* String with name of task. */
         10000,            /* Stack size in bytes. */
         NULL,             /* Parameter passed as input of the task */
         1,                /* Priority of the task. */
         &batteryHandler); /* Task handle. */
 
     while (uxTaskGetNumberOfTasks() > numTasks) {
-      if (ttn.isJoined() && batteryMeasured == true) {
-        vTaskDelete(joinLoRaHandler);
+      if (ttn.isJoined()) {
         break;
       }
-      Serial.println(uxTaskGetNumberOfTasks());
     }
-    Serial.println(uxTaskGetNumberOfTasks());
+
     prepareData();
     ttn.sendBytes(appData, sizeof(appData));
     // ttn.sendBytes(voltage, sizeof(voltage));

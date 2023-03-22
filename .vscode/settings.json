@@ -42,5 +42,6 @@
     "utility": "cpp",
     "typeinfo": "cpp",
     "random": "cpp"
-  }
+  },
+  "cmake.sourceDirectory": "${workspaceFolder}/.pio/libdeps/heltec_wireless_stick_lite/ESP32_LoRaWAN/src"
 }
